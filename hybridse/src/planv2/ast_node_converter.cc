@@ -2079,8 +2079,19 @@ base::Status convertShowStmt(const zetasql::ASTShowStatement* show_statement, no
                              node::SqlNode** output) {
     CHECK_TRUE(nullptr != show_statement && nullptr != show_statement->identifier(), common::kSqlAstError,
                "not an ASTShowStatement")
-    CHECK_TRUE(nullptr == show_statement->optional_like_string(), common::kSqlAstError,
-               "Non-support LIKE in show statement")
+    
+    switch(show_statement->pd()) {
+        case zetasql::ASTShowStatement::Pd::LIKE: {
+            CHECK_TRUE(nullptr == show_statement->optional_predicate_string(), common::kSqlAstError,
+                    "Non-support LIKE in show statement")
+            break;
+        }
+        case zetasql::ASTShowStatement::Pd::RLIKE: {
+            CHECK_TRUE(nullptr == show_statement->optional_predicate_string(), common::kSqlAstError,
+                    "Non-support RLIKE in show statement")
+            break;
+        }
+    }
 
     auto show_id = show_statement->identifier()->GetAsStringView();
 

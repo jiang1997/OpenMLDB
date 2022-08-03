@@ -870,6 +870,11 @@ TEST_F(ASTNodeConverterTest, ConvertStmtFailTest) {
     )sql",
                      common::kSqlAstError,
                      "Non-support LIKE in show statement");
+    expect_converted(R"sql(
+        SHOW GLOBAL VARIABLES RLIKE 'execute%'
+    )sql",
+                     common::kSqlAstError,
+                     "Non-support RLIKE in show statement");
 }
 
 TEST_F(ASTNodeConverterTest, ConvertCreateTableNodeErrorTest) {
