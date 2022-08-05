@@ -26,10 +26,34 @@
 #include "boost/filesystem/operations.hpp"
 #include "boost/lexical_cast.hpp"
 #include "boost/regex.hpp"
+#include "boost/spirit/include/qi.hpp"
 #include "codec/fe_row_codec.h"
 #include "glog/logging.h"
 #include "node/sql_node.h"
 #include "yaml-cpp/yaml.h"
+
+namespace qi = boost::spirit::qi;
+template <typename It>
+struct Parser : qi::grammar<It, std::string()> {
+    Parser() : Parser::base_type(unesc_str) {
+        unesc_char.add
+            ("\\a",  '\a')
+            ("\\b",  '\b')
+            ("\\f",  '\f')
+            ("\\n",  '\n')
+            ("\\r",  '\r')
+            ("\\t",  '\t')
+            ("\\v",  '\v')
+            ("\\\\", '\\')
+            ("\\'",  '\'')
+            ("\\\"", '\"');
+
+        unesc_str = *(unesc_char | ~qi::char_('"'));
+    }
+  private:
+    qi::rule<It, std::string()> unesc_str;
+    qi::symbols<char const, char const> unesc_char;
+};
 
 namespace hybridse {
 namespace sqlcase {
@@ -949,19 +973,49 @@ bool SqlCase::CreateTableInfoFromYamlNode(const YAML::Node& schema_data,
     if (schema_data["repeat_tag"]) {
         table->repeat_tag_ = schema_data["repeat_tag"].as<std::string>();
     }
-    if (schema_data["rows"]) {
-        table->rows_.clear();
-        if (!CreateRowsFromYamlNode(schema_data["rows"], table->rows_)) {
-            LOG(WARNING) << "Fail to parse rows";
-            return false;
-        }
-    }
+
     if (schema_data["columns"]) {
         table->columns_.clear();
         if (!CreateStringListFromYamlNode(schema_data["columns"],
                                           table->columns_)) {
             LOG(WARNING) << "Fail to parse columns";
             return false;
+        }
+    }
+
+    if (schema_data["rows"]) {
+        table->rows_.clear();
+        if (!CreateRowsFromYamlNode(schema_data["rows"], table->rows_)) {
+            LOG(WARNING) << "Fail to parse rows";
+            return false;
+        }
+        type::TableDef table_t;
+        SqlCase::ExtractSchema(table->columns_, table_t);
+        auto schema = table_t.columns();
+
+        for(auto &item_vec: table->rows_) {
+            auto it = schema.begin();
+            uint32_t index = 0;
+            for (; it != schema.end(); ++it) {
+                if (index >= item_vec.size()) {
+                    LOG(WARNING) << "Invalid Row: Row doesn't match with schema";
+                    return false;
+                }
+                auto &item = item_vec[index];
+                boost::trim(item);
+                if (item == "null" || item == "NULL") {
+                    index++;
+                    continue;
+                }
+                if(it->type() == type::kVarchar) {
+                    Parser<std::string::iterator> const p {};
+                    auto f = item.begin(), l = item.end();
+                    std::string s;
+                    parse(f, l, p, s);
+                    item = s;
+                }
+                index++;
+            }            
         }
     }
 
